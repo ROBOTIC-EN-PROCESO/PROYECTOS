@@ -1,0 +1,315 @@
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <SoftwareSerial.h>                          //libreria del bluetooth
+#include <Servo.h>                                   //libreria del servo
+#include <IRremote.h>                                //libreria del control remoto
+SoftwareSerial BtCarr(5, 6);                         //BLUETOOTH (pines 5 y 6)
+Servo myservo;                                       //nombre del servo
+char DATO = 0;                                       //SEÑAL DEL BLUETOOTH
+int ENA = A0, IRpin = 9, ENB = A1, VELOCIDAD = 255;  // pin 9 para el sensor infrarojo del control
+int comand = IrReceiver.decodedIRData.command;
+// VR.SENOR y pines
+int echoPin = 2, trigPin = 3, distance;  // pines a4 y a5 para el sensor ultrasonico
+long duration;
+//  PINES DE PUENTE H
+int IN1 = 13, IN2 = 12, IN3 = 11, IN4 = 10;  // pines digitales del puente h (los del medio)
+// POCICIONES DE SERVO
+int servoPos = 0, servoReadLeft = 0, servoReadRight = 0;
+//  PINES Segidor de linea
+int ln1 = A2, ln2 = A3, Vln1, Vln2;  //sensor 1 del seguidor de linias en el pin 4 y sensor 2 en el 7
+int kl = 0, LEDS = 7, BUZZ = 4;
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+void setup() {
+  lcd.init();
+  lcd.backlight();
+  // Recividores de señales
+  BtCarr.begin(9600);
+  IrReceiver.begin(IRpin);
+  //pin 8 servo
+  myservo.attach(8);
+  // SENSOR ULTRASONICO
+  pinMode(trigPin, OUTPUT);
+  pinMode(echoPin, INPUT);
+  // SEGIDOR DE LINEA
+  pinMode(ln1, INPUT);
+  pinMode(ln2, INPUT);
+  // PUENTE H
+  pinMode(IN1, OUTPUT);
+  pinMode(IN2, OUTPUT);
+  pinMode(IN3, OUTPUT);
+  pinMode(IN4, OUTPUT);
+  pinMode(ENA, OUTPUT);
+  pinMode(ENB, OUTPUT);
+  pinMode(LEDS, OUTPUT);
+  pinMode(BUZZ, OUTPUT);
+  // pocicion inicial del cervo
+  myservo.write(130);
+  Serial.begin(9600);
+}
+
+void loop() {
+  while (!BtCarr.available() && kl == 0) {
+    lcd.setCursor(1, 0);
+    lcd.clear();
+    lcd.print("conectando.");
+    delay(500);
+    lcd.clear();
+    lcd.print("conectando..");
+    delay(500);
+    lcd.clear();
+    lcd.print("conectando...");
+    delay(500);
+    FuctioncCarr();
+  }
+  FuctioncCarr();
+}
+void stopCar() {  //deter carro
+  digitalWrite(ENA, LOW);
+  digitalWrite(ENB, LOW);
+}
+
+void turnRightCar() {  //giro a la derecha
+  digitalWrite(ENB, LOW);
+  analogWrite(ENA, VELOCIDAD);
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, HIGH);
+}
+
+void turnLeftCar() {  //giro a la izquierda
+  digitalWrite(ENA, LOW);
+  analogWrite(ENB, VELOCIDAD);
+  digitalWrite(IN3, LOW);
+  digitalWrite(IN4, HIGH);
+}
+void BackRightCar() {  //de reversa a la derecha
+  digitalWrite(ENB, LOW);
+  analogWrite(ENA, VELOCIDAD);
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, LOW);
+}
+
+void BackLeftCar() {  // de reversa a la izquierda
+  digitalWrite(ENA, LOW);
+  analogWrite(ENB, VELOCIDAD);
+  digitalWrite(IN3, HIGH);
+  digitalWrite(IN4, LOW);
+}
+
+void moveForwardCar() {  //avanzar
+  analogWrite(ENA, VELOCIDAD);
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, HIGH);
+  analogWrite(ENB, VELOCIDAD);
+  digitalWrite(IN3, LOW);
+  digitalWrite(IN4, HIGH);
+}
+void carReverse() {  //de reversa
+  analogWrite(ENA, VELOCIDAD);
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, LOW);
+  analogWrite(ENB, VELOCIDAD);
+  digitalWrite(IN3, HIGH);
+  digitalWrite(IN4, LOW);
+}
+
+int medirDistancia() {
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+
+  duration = pulseIn(echoPin, HIGH);
+  distance = duration * 0.034 / 2;
+
+  return distance;
+}
+void ReadLine() {
+  distance = medirDistancia();
+  if (distance < 55) {  //si distancia es menor a 65
+    BackLeftCar();  }
+    if (distance > 55) moveForwardCar();
+  FuctioncCarr();  //entra denuevo al bucle si dertecta una señal
+}
+void ObstacleAvoidanceMode() {
+  if (distance < 55) {  //si distancia es menor a 65
+    stopCar();          //detener carro
+    lcd.setCursor(4, 0);
+    lcd.clear();
+    lcd.print("STOP CARR");
+    delay(200);                         //hacer una pauda de 0.4 segundos
+    myservo.write(40);                  //mover el serv0 a 40 grados
+    delay(600);                         //hacer una pausa de .6 segundos
+    servoReadRight = medirDistancia();  //la distancia ala derecha va hacer igualal valor leido
+
+    myservo.write(180);                //mover el servo a 180 grados
+    delay(500);                        //una pausa de .6 segundos
+    servoReadLeft = medirDistancia();  //la distancia ala izquierda va hacer igualal valor leido
+
+    myservo.write(130);  //mover el servo a 130 posicion inicial (alfrente)
+    delay(500);          //una pausa de .6 segundos
+
+    if (servoReadLeft > servoReadRight) {  //si la distancia izquierda es mayor que ala de la derecha va girar ala izquierda
+      Serial.println("Giro izquierda");
+      lcd.setCursor(4, 0);
+      lcd.clear();
+      lcd.print("Giro izquierda");
+      turnLeftCar();
+      delay(250);
+    }
+
+    if (servoReadRight >= servoReadLeft) {  //si la distancia derecha es mayor que ala de la derecha va girar ala derecha
+      Serial.println("Giro derecha");
+      lcd.setCursor(4, 0);
+      lcd.clear();
+      lcd.print("Giro derecha");
+      turnRightCar();
+      delay(250);
+    }
+  }
+
+  if (distance > 55) {  //si la distancia es mayor a 22 avansar recto y inprimir recto
+    Serial.println("Recto");
+    moveForwardCar();
+  }
+  FuctioncCarr();  //va entrar denuevo al vucle si recibe alguna señal de bluetooth
+}
+void ManualCarr() {
+  if (DATO == 'S' || comand == 69 || comand == 68 || DATO == 'u' || DATO == 'x') {
+    stopCar();  //si reciva algunos de los datos va a detener el carro
+    lcd.setCursor(4, 0);
+    lcd.clear();
+    lcd.print("STOP CARR");
+  }
+  if (comand == 68) {
+    stopCar();  //si recive el comand 68 va detener el carro
+    lcd.setCursor(4, 0);
+    lcd.clear();
+    lcd.print("STOP CARR");
+  }
+  if (DATO == 'F' || comand == 67) {
+    moveForwardCar();  //si recibe alguno de los datos va avansar el carro para alfrente
+    lcd.setCursor(4, 0);
+    lcd.clear();
+    lcd.print("AVANSANDO");
+  }
+  if (DATO == 'B' || comand == 64) {
+    carReverse();  //si recibe alguno de los datos va a retrosder
+    lcd.setCursor(4, 0);
+    lcd.clear();
+    lcd.print("RETROSEDIENDO");
+  }
+  if (DATO == 'R' || comand == 12 || DATO == 'I') {
+    turnRightCar();  //si recibe alguno de los datos va girar ala derecha
+    lcd.setCursor(4, 0);
+    lcd.clear();
+    lcd.print("Giro derecha");
+  }
+  if (DATO == 'L' || comand == 24 || DATO == 'G') {
+    turnLeftCar();  //si recibe alguno de los datos va girar ala izquierda
+    lcd.setCursor(4, 0);
+    lcd.clear();
+    lcd.print("Giro izquierda");
+  }
+  if (DATO == 'J') {
+    BackRightCar();  //si recibe alguno de los datos va girar ala izquierda
+    lcd.setCursor(0, 0);
+    lcd.clear();
+    lcd.print("reversa derecha");
+  }
+  if (DATO == 'H') {
+    BackLeftCar();  //si recibe alguno de los datos va girar ala izquierda
+    lcd.setCursor(0, 0);
+    lcd.clear();
+    lcd.print("reversa izquierda");
+  }
+  if (DATO == '0') {
+    VELOCIDAD = 0;
+  } else if (DATO == '1') {
+    VELOCIDAD = 50;
+  } else if (DATO == '2') {
+    VELOCIDAD = 70;
+  } else if (DATO == '3') {
+    VELOCIDAD = 90;
+  } else if (DATO == '4') {
+    VELOCIDAD = 110;
+  } else if (DATO == '5') {
+    VELOCIDAD = 130;
+  } else if (DATO == '6') {
+    VELOCIDAD = 150;
+  } else if (DATO == '7') {
+    VELOCIDAD = 170;
+  } else if (DATO == '8') {
+    VELOCIDAD = 190;
+  } else if (DATO == '9') {
+    VELOCIDAD = 210;
+  } else if (DATO == 'q') {
+    VELOCIDAD = 255;
+  }
+  return VELOCIDAD;
+  if (comand == 25) {             //si recibe el comand 25
+    while (BtCarr.available()) {  //y mintras recibe una señal de bluetooth
+      kl = 1;
+      DATO = BtCarr.read();  //dato va hacer el valor ledio del bluetooth
+    }
+  }
+}
+void FuctioncCarr() {
+  while (BtCarr.available()) {  //mientras bluetooth reciba una señal
+    kl = 1;
+    DATO = BtCarr.read();  //dato va hacer igual al valor ledido del bluetooth
+    while (DATO == 'U') {  //mientras que dato sea igual a U
+      distance = medirDistancia();
+      ReadLine();  //va activarse el modo seguidor de lineas
+    }
+    while (DATO == 'X') {           //mientras que dato sea igual a X
+      distance = medirDistancia();  //medir la distancia con el sensor
+      Serial.println(distance);     //inprimir la distancia
+      lcd.setCursor(0, 0);
+      lcd.clear();
+      lcd.print("Distacia: ");
+      lcd.print(distance);
+      Serial.println(distance);  //inprimir la distancia
+      ObstacleAvoidanceMode();   //activar el modo evasor de obtaculos
+    }
+    while (DATO == 'W') {
+      digitalWrite(LEDS, HIGH);
+      FuctioncCarr();
+    }
+    while (DATO == 'w') {
+      digitalWrite(LEDS, LOW);
+      FuctioncCarr();
+    }
+    while (DATO == 'V') {
+      digitalWrite(BUZZ, HIGH);
+      FuctioncCarr();
+    }
+    while (DATO == 'v') {
+      digitalWrite(BUZZ, LOW);
+      FuctioncCarr();
+    }
+    ManualCarr();  //si recibe algun dato de bluettoth va a controlarse por medio debluetooth
+  }
+  while (DATO == 'q') {                 //mientras que dato sea igual a V
+    while (IrReceiver.decode() == 0) {  //si recibe valores falsos van a valer 0
+    }
+    comand = IrReceiver.decodedIRData.command;  //comad va hacer igual alos valores decodificados
+    Serial.println(comand);                     //va inprimir el valor recivido
+    IrReceiver.resume();                        //deja un tiempo de espera para que no halla interferencia
+    while (comand == 13) {                      //demientras que el comand que recibe sea igual a 13
+      ReadLine();                               //va actiar el modo seguidor de lineas
+    }
+    while (comand == 70) {          //demientras que comand sea igual a 70
+      delay(50);                    //va hacer un a pausa de 0.05 segundos
+      distance = medirDistancia();  //va a medir la distancia obtenida
+      Serial.println(distance);     //inprimir la distancia
+      lcd.setCursor(0, 0);
+      lcd.clear();
+      lcd.print("Distacia: ");
+      lcd.print(distance);
+      Serial.println(distance);  //inprimir la distancia
+      ObstacleAvoidanceMode();   //va activar el modo evasor de obstaculos
+    }
+    ManualCarr();  //va entrar al modo manual del control remoto
+  }
+}
